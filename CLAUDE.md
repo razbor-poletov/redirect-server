@@ -5,8 +5,10 @@ Lightweight nginx-based Docker image that redirects traffic from razborpoletov.c
 ## Project Structure
 
 - `nginx.conf` — nginx redirect rules
-- `Dockerfile` — Docker image definition (nginx:alpine based)
-- `.github/workflows/docker-publish.yml` — CI/CD pipeline
+- `Dockerfile` — Docker image definition (nginx alpine image, version pinned)
+- `scripts/smoke-test.sh` — smoke test of the built image
+- `.github/workflows/` — CI/CD pipeline and Dependabot auto-merge
+- `.github/config/`, `mise.toml` — declarative GitHub repo configuration and the task that applies it
 
 ## Redirect Rules
 
@@ -45,15 +47,29 @@ Image is tagged with `latest` and commit SHA. The image is built and smoke-teste
 (`scripts/smoke-test.sh`) first; it is pushed only if the smoke test passes. PRs run build + smoke test without pushing.
 
 The nginx version is pinned in `Dockerfile`. Dependabot (`.github/dependabot.yml`, weekly) opens PRs for
-the base image and GitHub Actions. For non-major Dependabot PRs the `merge-dependabot` job approves the PR and
-enables auto-merge (`gh pr merge --auto --squash`); GitHub merges it once the required `build-and-push` check
-(build + smoke test) passes. The job waits for the merge and then publishes the image via `workflow_dispatch`
-(merges made with `GITHUB_TOKEN` do not trigger the `push` event). Major bumps need manual review.
+the base image and GitHub Actions. Workflows, one concern per file:
 
-`main` is protected by the "Main branch" ruleset (required check `build-and-push`, branch must be up to date),
-so changes reach `main` through pull requests, not direct pushes. `scripts/check-ruleset.sh` (CI job
-`check-ruleset`, also runnable locally as an admin) verifies that ruleset and the merge settings the automation
-relies on; if you rename the `build-and-push` job, update the ruleset's required check too.
+- `docker-publish.yml` — build, smoke test, push (the `build-and-push` job).
+- `dependabot-automerge.yml` — approves non-major Dependabot PRs and enables auto-merge; GitHub merges once the
+  required `build-and-push` check passes. The job waits for the merge and dispatches `docker-publish.yml`,
+  because merges made with `GITHUB_TOKEN` do not trigger the `push` event. Major bumps need manual review.
+
+**Don't rename the `build-and-push` job:** branch protection requires a check with this name, so a rename
+silently stops protecting `main`.
+
+## GitHub repository configuration
+
+Repo settings and branch protection are declared in `.github/config/` (GitHub API payloads) and applied with the
+[gh repo-config](https://github.com/twelvelabs/gh-repo-config) extension:
+
+- `repo.json` — repository settings (merge methods, delete branch on merge, ...)
+- `topics.json` — topics
+- `branch-protection/main.json` — `main`: required check `build-and-push`, branch up to date, no force push or
+  deletion, signed commits; `enforce_admins=false`, so an admin can push to `main` directly
+- `actions-permissions.json` — default workflow permissions `read`; Actions may approve PRs (needed by
+  `dependabot-automerge.yml`)
+- Apply: `mise run repo:apply` (once: `gh extension install twelvelabs/gh-repo-config`)
+- Change settings in these files and apply them, not in the UI
 
 ## Deployment
 

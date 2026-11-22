@@ -5,8 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # Also used to publish after an auto-merged Dependabot PR: merges made with
-  # GITHUB_TOKEN do not trigger the `push` event.
+  # Used by dependabot-automerge.yml: merges made with GITHUB_TOKEN do not
+  # trigger the `push` event.
   workflow_dispatch:
 
 env:
@@ -14,7 +14,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # The job id is the required status check of the "Main branch" ruleset.
+  # The job id is the required status check of the main branch protection
+  # (.github/config/branch-protection/main.json). Don't rename it.
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
@@ -65,83 +66,3 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-  # Guards the repository settings this pipeline relies on (the ruleset's
-  # required check, auto-merge). Not a required check itself.
-  check-ruleset:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Check ruleset and merge settings
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: scripts/check-ruleset.sh
-
-  # Dependabot PRs: approve and enable auto-merge. GitHub merges the PR once the
-  # required `build-and-push` check (build + smoke test) passes; this job waits
-  # for that merge and then publishes the image. Major version bumps are left
-  # for manual review.
-  merge-dependabot:
-    if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    permissions:
-      contents: write
-      pull-requests: write
-      actions: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      PR_URL: ${{ github.event.pull_request.html_url }}
-
-    steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Approve PR
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: gh pr review --approve "$PR_URL"
-
-      # `--auto` waits for the required checks. If they already passed, GitHub
-      # refuses to enable auto-merge on a clean PR, so merge directly then.
-      - name: Enable auto-merge
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: gh pr merge --auto --squash "$PR_URL" || gh pr merge --squash "$PR_URL"
-
-      # Merges done with GITHUB_TOKEN do not trigger the `push` workflow, so
-      # wait for the merge here and publish explicitly afterwards.
-      - name: Wait for merge
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: |
-          for _ in $(seq 1 180); do
-            state="$(gh pr view "$PR_URL" --json state --jq .state)"
-            if [ "$state" = "MERGED" ]; then
-              exit 0
-            fi
-            if [ "$state" = "CLOSED" ]; then
-              echo "PR was closed without merging"
-              exit 1
-            fi
-            build="$(gh pr view "$PR_URL" --json statusCheckRollup \
-              --jq '[.statusCheckRollup[] | select(.name == "build-and-push") | .conclusion] | .[0] // ""')"
-            case "$build" in
-              FAILURE | CANCELLED | TIMED_OUT)
-                echo "build-and-push finished with $build, the PR will not be merged"
-                exit 1
-                ;;
-            esac
-            sleep 10
-          done
-          echo "Timed out waiting for the PR to merge"
-          exit 1
-
-      - name: Publish image from main
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: gh workflow run docker-publish.yml --repo "$GITHUB_REPOSITORY" --ref main

@@ -1,0 +1,42 @@
+name: Dependabot auto-approve and auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  dependabot:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    timeout-minutes: 15
+    env:
+      PR_URL: ${{ github.event.pull_request.html_url }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Approve patch and minor updates
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr review --approve "$PR_URL"
+
+      # GitHub merges once the required `build-and-push` check passes. If it
+      # already has, auto-merge is refused on a clean PR, so merge directly.
+      - name: Enable auto-merge for patch and minor updates
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL" || gh pr merge --squash "$PR_URL"
+
+      # A merge made with GITHUB_TOKEN does not trigger the `push` workflow,
+      # so wait for it and publish the image explicitly.
+      - name: Publish the image after the merge
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: |
+          until [ "$(gh pr view "$PR_URL" --json state --jq .state)" != OPEN ]; do sleep 10; done
+          [ "$(gh pr view "$PR_URL" --json state --jq .state)" = MERGED ]
+          gh workflow run docker-publish.yml --repo "$GITHUB_REPOSITORY" --ref main
