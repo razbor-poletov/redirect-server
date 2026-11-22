@@ -5,8 +5,9 @@ Lightweight nginx-based Docker image that redirects traffic from razborpoletov.c
 ## Project Structure
 
 - `nginx.conf` — nginx redirect rules
-- `Dockerfile` — Docker image definition (nginx:alpine based)
-- `.github/workflows/docker-publish.yml` — CI/CD pipeline
+- `Dockerfile` — Docker image definition (nginx alpine image, version pinned)
+- `scripts/smoke-test.sh` — smoke test of the built image
+- `.github/workflows/` — CI/CD pipeline and Dependabot auto-merge
 
 ## Redirect Rules
 
@@ -32,10 +33,29 @@ curl -I http://localhost:8888/
 docker stop redirect-test && docker rm redirect-test
 ```
 
+Smoke test (runs every redirect rule against a throwaway container):
+
+```bash
+scripts/smoke-test.sh redirect-server:test
+```
+
 ## CI/CD
 
 GitHub Actions builds and pushes to `ghcr.io/razbor-poletov/redirect-server` on push to `main`.
-Image is tagged with `latest` and commit SHA.
+Image is tagged with `latest` and commit SHA. The image is built and smoke-tested
+(`scripts/smoke-test.sh`) first; it is pushed only if the smoke test passes. PRs run build + smoke test without pushing.
+
+The nginx version is pinned in `Dockerfile`. Dependabot (`.github/dependabot.yml`, weekly) opens PRs for
+the base image and GitHub Actions. Workflows, one concern per file:
+
+- `docker-publish.yml` — build, smoke test, push (the `build-and-push` job).
+- `dependabot-automerge.yml` — approves non-major Dependabot PRs and enables auto-merge; GitHub merges once the
+  required `build-and-push` check passes. The job waits for the merge and dispatches `docker-publish.yml`,
+  because merges made with `GITHUB_TOKEN` do not trigger the `push` event. Major bumps need manual review.
+  Needs repository settings: auto-merge enabled, and Actions allowed to approve pull requests.
+
+**Don't rename the `build-and-push` job:** the "Main branch" ruleset requires a check with this name, so a rename
+silently stops protecting `main`.
 
 ## Deployment
 
