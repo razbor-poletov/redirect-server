@@ -5,9 +5,9 @@ set -euo pipefail
 
 gh repo-config apply
 
-# Workflow permissions, which the extension does not manage: it covers repo.json, topics.json and
-# branch protection, and nothing under Actions. Applied here so settings live in files and are
-# applied by this task, never clicked in the UI.
+# Workflow permissions, which the extension does not manage: it covers repo.json and topics.json,
+# and nothing under Actions. Applied here so settings live in files and are applied by this task,
+# never clicked in the UI.
 #
 # `can_approve_pull_request_reviews` is what dependabot-automerge.yml needs: an approval by
 # GITHUB_TOKEN is refused otherwise, whatever `permissions` the job asks for.

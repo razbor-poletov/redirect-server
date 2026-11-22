@@ -54,22 +54,22 @@ the base image and GitHub Actions. Workflows, one concern per file:
   required `build-and-push` check passes. The job waits for the merge and dispatches `docker-publish.yml`,
   because merges made with `GITHUB_TOKEN` do not trigger the `push` event. Major bumps need manual review.
 
-**Don't rename the `build-and-push` job:** branch protection requires a check with this name, so a rename
+**Don't rename the `build-and-push` job:** the "Main branch" ruleset requires a check with this name, so a rename
 silently stops protecting `main`.
 
 ## GitHub repository configuration
 
-Repo settings and branch protection are declared in `.github/config/` (GitHub API payloads) and applied with the
+Repo settings are declared in `.github/config/` (GitHub API payloads) and applied with the
 [gh repo-config](https://github.com/twelvelabs/gh-repo-config) extension:
 
 - `repo.json` — repository settings (merge methods, delete branch on merge, ...)
 - `topics.json` — topics
-- `branch-protection/main.json` — `main`: required check `build-and-push`, branch up to date, no force push or
-  deletion, signed commits; `enforce_admins=false`, so an admin can push to `main` directly
 - `actions-permissions.json` — default workflow permissions `read`; Actions may approve PRs (needed by
   `dependabot-automerge.yml`)
 - Apply: `mise run repo:apply` (once: `gh extension install twelvelabs/gh-repo-config`)
-- Change settings in these files and apply them, not in the UI
+- Change these settings in the files and apply them, not in the UI
+- Protection of `main` is not in these files: it is the "Main branch" ruleset (deletion, no force push, required
+  check `build-and-push`, branch up to date), configured in the repository settings
 
 ## Deployment
 
